@@ -1,8 +1,13 @@
 import { memo } from "react";
-import type { CellState } from "../game/types";
 
 interface CellProps {
-  cell: CellState;
+  row: number;
+  col: number;
+  revealed: boolean;
+  flagged: boolean;
+  detonated: boolean;
+  isMine: boolean;
+  adjacentMines: number;
   isCursor: boolean;
   gameOver: boolean;
   onReveal: (row: number, col: number) => void;
@@ -11,43 +16,57 @@ interface CellProps {
   onHover: (row: number, col: number) => void;
 }
 
-function CellBase({ cell, isCursor, gameOver, onReveal, onFlag, onChord, onHover }: CellProps) {
+function CellBase({
+  row,
+  col,
+  revealed,
+  flagged,
+  detonated,
+  isMine,
+  adjacentMines,
+  isCursor,
+  gameOver,
+  onReveal,
+  onFlag,
+  onChord,
+  onHover,
+}: CellProps) {
   const classes = ["cell"];
   if (isCursor) classes.push("cursor");
-  if (cell.flagged && !cell.revealed) classes.push("flagged");
-  if (cell.revealed) classes.push("revealed");
-  if (cell.revealed && cell.isMine) classes.push("mine");
-  if (cell.detonated) classes.push("detonated");
-  if (cell.revealed && !cell.isMine && cell.adjacentMines === 0) classes.push("empty");
-  if (cell.revealed && !cell.isMine && cell.adjacentMines > 0) {
-    classes.push(`num-${cell.adjacentMines}`);
+  if (flagged && !revealed) classes.push("flagged");
+  if (revealed) classes.push("revealed");
+  if (revealed && isMine) classes.push("mine");
+  if (detonated) classes.push("detonated");
+  if (revealed && !isMine && adjacentMines === 0) classes.push("empty");
+  if (revealed && !isMine && adjacentMines > 0) {
+    classes.push(`num-${adjacentMines}`);
   }
 
-  const disabled = gameOver && !cell.revealed;
+  const disabled = gameOver && !revealed;
 
   return (
     <button
       type="button"
       className={classes.join(" ")}
       disabled={disabled}
-      aria-label={`Cell row ${cell.row} col ${cell.col}`}
-      onMouseEnter={() => onHover(cell.row, cell.col)}
+      aria-label={`Cell row ${row} col ${col}`}
+      onMouseEnter={() => onHover(row, col)}
       onClick={(e) => {
         e.preventDefault();
-        onReveal(cell.row, cell.col);
+        onReveal(row, col);
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        onFlag(cell.row, cell.col);
+        onFlag(row, col);
       }}
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
-          onChord(cell.row, cell.col);
+          onChord(row, col);
         }
       }}
     >
-      {cell.revealed && !cell.isMine && cell.adjacentMines > 0 ? cell.adjacentMines : null}
+      {revealed && !isMine && adjacentMines > 0 ? adjacentMines : null}
     </button>
   );
 }

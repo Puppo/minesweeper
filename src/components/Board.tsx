@@ -30,7 +30,13 @@ export function Board({ state, onReveal, onFlag, onChord, onHover, onNewGame }: 
           row.map((cell, c) => (
             <Cell
               key={`${r}-${c}`}
-              cell={cell}
+              row={cell.row}
+              col={cell.col}
+              revealed={cell.revealed}
+              flagged={cell.flagged}
+              detonated={cell.detonated}
+              isMine={cell.isMine}
+              adjacentMines={cell.adjacentMines}
               isCursor={cursor.row === r && cursor.col === c}
               gameOver={gameOver}
               onReveal={onReveal}
