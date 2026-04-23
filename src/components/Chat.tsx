@@ -269,6 +269,21 @@ export function Chat({ engine }: ChatProps) {
 
   const disabled = availability === "unsupported" || availability === "unavailable";
 
+  const suggestions = [
+    "What's my safest next move?",
+    "Flag any obvious mines you can see.",
+    "Explain the current board state.",
+  ];
+
+  const sendSuggestion = useCallback(
+    (text: string) => {
+      if (disabled || isBusy) return;
+      setInput(text);
+      void submit(text);
+    },
+    [disabled, isBusy, submit],
+  );
+
   return (
     <div className="panel chat">
       <div className="chat-header">
@@ -321,6 +336,22 @@ export function Chat({ engine }: ChatProps) {
       </div>
 
       {error && <div className="chat-notice error">{error}</div>}
+
+      {!disabled && messages.length === 0 && (
+        <div className="chat-suggestions">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="chat-chip"
+              onClick={() => sendSuggestion(s)}
+              disabled={isBusy}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <form className="chat-form" onSubmit={handleSubmit}>
         <textarea

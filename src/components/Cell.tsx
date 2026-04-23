@@ -10,6 +10,7 @@ interface CellProps {
   adjacentMines: number;
   isCursor: boolean;
   gameOver: boolean;
+  flagMode: boolean;
   onReveal: (row: number, col: number) => void;
   onFlag: (row: number, col: number) => void;
   onChord: (row: number, col: number) => void;
@@ -26,6 +27,7 @@ function CellBase({
   adjacentMines,
   isCursor,
   gameOver,
+  flagMode,
   onReveal,
   onFlag,
   onChord,
@@ -41,6 +43,7 @@ function CellBase({
   if (revealed && !isMine && adjacentMines > 0) {
     classes.push(`num-${adjacentMines}`);
   }
+  if (flagMode && !revealed) classes.push("flag-target");
 
   const disabled = gameOver && !revealed;
 
@@ -53,7 +56,11 @@ function CellBase({
       onMouseEnter={() => onHover(row, col)}
       onClick={(e) => {
         e.preventDefault();
-        onReveal(row, col);
+        if (flagMode && !revealed) {
+          onFlag(row, col);
+        } else {
+          onReveal(row, col);
+        }
       }}
       onContextMenu={(e) => {
         e.preventDefault();

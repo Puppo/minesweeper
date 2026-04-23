@@ -4,6 +4,9 @@ import { Cell } from "./Cell";
 
 interface BoardProps {
   state: GameState;
+  flagMode: boolean;
+  bestTimeSeconds: number | null;
+  isNewBest: boolean;
   onReveal: (row: number, col: number) => void;
   onFlag: (row: number, col: number) => void;
   onChord: (row: number, col: number) => void;
@@ -11,9 +14,27 @@ interface BoardProps {
   onNewGame: () => void;
 }
 
-export function Board({ state, onReveal, onFlag, onChord, onHover, onNewGame }: BoardProps) {
-  const { config, cells, cursor, status } = state;
+function formatSeconds(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
+export function Board({
+  state,
+  flagMode,
+  bestTimeSeconds,
+  isNewBest,
+  onReveal,
+  onFlag,
+  onChord,
+  onHover,
+  onNewGame,
+}: BoardProps) {
+  const { config, cells, cursor, status, startedAt, endedAt } = state;
   const gameOver = status === "won" || status === "lost";
+  const elapsedSeconds =
+    startedAt ? Math.floor(((endedAt ?? Date.now()) - startedAt) / 1000) : 0;
 
   const gridStyle = useMemo(
     () => ({
@@ -24,7 +45,7 @@ export function Board({ state, onReveal, onFlag, onChord, onHover, onNewGame }: 
   );
 
   return (
-    <div className="panel board-wrap">
+    <div className={`panel board-wrap ${flagMode ? "flag-mode" : ""}`}>
       <div className="board" style={gridStyle}>
         {cells.map((row, r) =>
           row.map((cell, c) => (
@@ -39,6 +60,7 @@ export function Board({ state, onReveal, onFlag, onChord, onHover, onNewGame }: 
               adjacentMines={cell.adjacentMines}
               isCursor={cursor.row === r && cursor.col === c}
               gameOver={gameOver}
+              flagMode={flagMode}
               onReveal={onReveal}
               onFlag={onFlag}
               onChord={onChord}
@@ -55,9 +77,25 @@ export function Board({ state, onReveal, onFlag, onChord, onHover, onNewGame }: 
             </h2>
             <p className="overlay-body">
               {status === "won"
-                ? "You cleared the field without a single wrong step."
+                ? isNewBest
+                  ? "New personal best! You swept the field in record time."
+                  : "You cleared the field without a single wrong step."
                 : "One wrong tile, one big bang. Try again?"}
             </p>
+            {status === "won" && (
+              <div className="overlay-stats">
+                <div>
+                  Time
+                  <strong>{formatSeconds(elapsedSeconds)}</strong>
+                </div>
+                {bestTimeSeconds != null && (
+                  <div>
+                    Best
+                    <strong className="best">{formatSeconds(bestTimeSeconds)}</strong>
+                  </div>
+                )}
+              </div>
+            )}
             <button type="button" className="menu-btn primary" onClick={onNewGame}>
               New game
             </button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Board } from "./components/Board";
 import { Chat } from "./components/Chat";
 import { DifficultyMenu } from "./components/DifficultyMenu";
@@ -9,11 +9,36 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { registerWebMcpTools } from "./webmcp/register";
 import type { Difficulty } from "./game/types";
 
+const BEST_TIMES_KEY = "minesweeper:best-times";
+
+type BestTimes = Partial<Record<Difficulty, number>>;
+
+function loadBestTimes(): BestTimes {
+  try {
+    const raw = localStorage.getItem(BEST_TIMES_KEY);
+    return raw ? (JSON.parse(raw) as BestTimes) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveBestTimes(next: BestTimes): void {
+  try {
+    localStorage.setItem(BEST_TIMES_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
 export default function App() {
   const { engine } = useEngine();
   const state = engine.getState();
   const [mcpAvailable, setMcpAvailable] = useState(false);
   const [toolCount, setToolCount] = useState(0);
+  const [flagMode, setFlagMode] = useState(false);
+  const [bestTimes, setBestTimes] = useState<BestTimes>(() => loadBestTimes());
+  const [isNewBest, setIsNewBest] = useState(false);
+  const lastStatusRef = useRef(state.status);
 
   useKeyboard(engine);
 
@@ -28,6 +53,29 @@ export default function App() {
     }
     return () => handle.dispose();
   }, [engine]);
+
+  useEffect(() => {
+    const prev = lastStatusRef.current;
+    lastStatusRef.current = state.status;
+    if (state.status !== "won" || prev === "won") {
+      if (state.status !== "won") setIsNewBest(false);
+      return;
+    }
+    if (!state.startedAt || !state.endedAt) return;
+    const elapsedSec = Math.floor((state.endedAt - state.startedAt) / 1000);
+    const difficulty = state.config.difficulty;
+    setBestTimes((current) => {
+      const existing = current[difficulty];
+      if (existing != null && existing <= elapsedSec) {
+        setIsNewBest(false);
+        return current;
+      }
+      const next = { ...current, [difficulty]: elapsedSec };
+      saveBestTimes(next);
+      setIsNewBest(true);
+      return next;
+    });
+  }, [state.status, state.startedAt, state.endedAt, state.config.difficulty]);
 
   const onReveal = useCallback(
     (row: number, col: number) => {
@@ -60,51 +108,97 @@ export default function App() {
   const onSelectDifficulty = useCallback(
     (difficulty: Difficulty) => {
       engine.newGame({ difficulty }, "human");
+      setIsNewBest(false);
     },
     [engine],
   );
 
   const onReset = useCallback(() => {
     engine.newGame({ difficulty: state.config.difficulty }, "human");
+    setIsNewBest(false);
   }, [engine, state.config.difficulty]);
+
+  const onToggleFlagMode = useCallback(() => {
+    setFlagMode((v) => !v);
+  }, []);
+
+  const bestTime = bestTimes[state.config.difficulty] ?? null;
 
   return (
     <div className="app">
-      <div className={`mcp-badge ${mcpAvailable ? "" : "off"}`} title={
-        mcpAvailable
-          ? `${toolCount} WebMCP tools registered`
-          : "WebMCP not available in this browser (Chrome 146+ with chrome://flags/#enable-webmcp-testing)"
-      }>
+      <div
+        className={`mcp-badge ${mcpAvailable ? "" : "off"}`}
+        title={
+          mcpAvailable
+            ? `${toolCount} WebMCP tools registered`
+            : "WebMCP not available in this browser (Chrome 146+ with chrome://flags/#enable-webmcp-testing)"
+        }
+      >
         <span className="mcp-dot" />
         {mcpAvailable ? `WebMCP · ${toolCount} tools` : "WebMCP offline"}
       </div>
 
       <header className="header">
         <h1 className="title">MINESWEEPER</h1>
-        <p className="subtitle">WebMCP edition · play with mouse, keyboard, or let an LLM drive</p>
+        <p className="subtitle">
+          WebMCP edition · play with mouse, keyboard, or let an AI drive
+        </p>
       </header>
 
-      <DifficultyMenu current={state.config.difficulty} onSelect={onSelectDifficulty} />
-      <Hud state={state} onReset={onReset} />
-      <Board
-        state={state}
-        onReveal={onReveal}
-        onFlag={onFlag}
-        onChord={onChord}
-        onHover={onHover}
-        onNewGame={onReset}
-      />
-      <ActionLog state={state} />
-      <Chat engine={engine} />
+      <div className="layout">
+        <div className="main-col">
+          <DifficultyMenu
+            current={state.config.difficulty}
+            onSelect={onSelectDifficulty}
+          />
+          <Hud
+            state={state}
+            onReset={onReset}
+            flagMode={flagMode}
+            onToggleFlagMode={onToggleFlagMode}
+            bestTimeSeconds={bestTime}
+          />
+          <Board
+            state={state}
+            flagMode={flagMode}
+            bestTimeSeconds={bestTime}
+            isNewBest={isNewBest}
+            onReveal={onReveal}
+            onFlag={onFlag}
+            onChord={onChord}
+            onHover={onHover}
+            onNewGame={onReset}
+          />
+          <div className="panel help">
+            <span className="help-group">
+              <kbd>←↑↓→</kbd> move
+            </span>
+            <span className="help-group">
+              <kbd>Space</kbd>
+              <kbd>↵</kbd> reveal
+            </span>
+            <span className="help-group">
+              <kbd>F</kbd> flag
+            </span>
+            <span className="help-group">
+              <kbd>C</kbd> chord
+            </span>
+            <span className="help-group">
+              <kbd>N</kbd> new game
+            </span>
+            <span className="help-group">
+              <kbd>right-click</kbd> flag
+            </span>
+            <span className="help-group">
+              <kbd>middle-click</kbd> chord
+            </span>
+          </div>
+        </div>
 
-      <div className="help">
-        <span><kbd>←↑↓→</kbd> move cursor</span>
-        <span><kbd>Space</kbd>/<kbd>↵</kbd> reveal</span>
-        <span><kbd>F</kbd> flag</span>
-        <span><kbd>C</kbd> chord</span>
-        <span><kbd>N</kbd> new game</span>
-        <span><kbd>right-click</kbd> flag</span>
-        <span><kbd>middle-click</kbd> chord</span>
+        <aside className="side-col">
+          <Chat engine={engine} />
+          <ActionLog state={state} />
+        </aside>
       </div>
     </div>
   );

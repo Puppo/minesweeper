@@ -4,6 +4,9 @@ import type { GameState } from "../game/types";
 interface HudProps {
   state: GameState;
   onReset: () => void;
+  flagMode: boolean;
+  onToggleFlagMode: () => void;
+  bestTimeSeconds: number | null;
 }
 
 function pad(n: number, width = 3): string {
@@ -12,9 +15,17 @@ function pad(n: number, width = 3): string {
   return sign + String(abs).padStart(width, "0");
 }
 
-export function Hud({ state, onReset }: HudProps) {
-  const { config, flagsPlaced, status, startedAt, endedAt } = state;
+export function Hud({
+  state,
+  onReset,
+  flagMode,
+  onToggleFlagMode,
+  bestTimeSeconds,
+}: HudProps) {
+  const { config, flagsPlaced, cellsRevealed, status, startedAt, endedAt } = state;
   const minesRemaining = config.mines - flagsPlaced;
+  const totalSafe = config.rows * config.cols - config.mines;
+  const progress = totalSafe > 0 ? Math.min(100, (cellsRevealed / totalSafe) * 100) : 0;
   const [, setNow] = useState(0);
 
   useEffect(() => {
@@ -38,7 +49,7 @@ export function Hud({ state, onReset }: HudProps) {
         <span className="hud-label">Mines</span>
         <span className="lcd">{pad(minesRemaining)}</span>
       </div>
-      <div className="hud-divider" />
+
       <button
         type="button"
         className={`status-face ${status}`}
@@ -48,11 +59,39 @@ export function Hud({ state, onReset }: HudProps) {
       >
         {face}
       </button>
-      <div className="hud-divider" />
+
+      <div className="hud-progress">
+        <div className="hud-progress-meta">
+          <span>{Math.round(progress)}% cleared</span>
+          {bestTimeSeconds != null && (
+            <span className="best" title={`Best time on ${config.difficulty}`}>
+              ★ best {pad(bestTimeSeconds)}
+            </span>
+          )}
+        </div>
+        <div className="hud-progress-bar">
+          <div
+            className="hud-progress-fill"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
       <div className="hud-item">
         <span className="hud-label">Time</span>
         <span className="lcd timer">{pad(elapsedSeconds)}</span>
       </div>
+
+      <button
+        type="button"
+        className={`flag-toggle ${flagMode ? "active" : ""}`}
+        onClick={onToggleFlagMode}
+        title="Toggle flag mode — when on, tapping a cell places a flag"
+        aria-pressed={flagMode}
+      >
+        <span className="flag-icon">⚑</span>
+        <span>{flagMode ? "Flag mode" : "Reveal mode"}</span>
+      </button>
     </div>
   );
 }

@@ -5,10 +5,10 @@ interface DifficultyMenuProps {
   onSelect: (difficulty: Difficulty) => void;
 }
 
-const OPTIONS: Array<{ id: Difficulty; label: string; sub: string }> = [
-  { id: "beginner", label: "Beginner", sub: "9×9 · 10" },
-  { id: "intermediate", label: "Intermediate", sub: "16×16 · 40" },
-  { id: "expert", label: "Expert", sub: "16×30 · 99" },
+const OPTIONS: Array<{ id: Difficulty; label: string; sub: string; icon: string }> = [
+  { id: "beginner", label: "Beginner", sub: "9×9 · 10", icon: "◆" },
+  { id: "intermediate", label: "Intermediate", sub: "16×16 · 40", icon: "◆◆" },
+  { id: "expert", label: "Expert", sub: "16×30 · 99", icon: "◆◆◆" },
 ];
 
 export function DifficultyMenu({ current, onSelect }: DifficultyMenuProps) {
@@ -20,9 +20,11 @@ export function DifficultyMenu({ current, onSelect }: DifficultyMenuProps) {
           type="button"
           className={`menu-btn ${current === opt.id ? "active" : ""}`}
           onClick={() => onSelect(opt.id)}
+          aria-pressed={current === opt.id}
         >
+          <span className="btn-ic" aria-hidden>{opt.icon}</span>
           {opt.label}
-          <span style={{ opacity: 0.55, marginLeft: 8, fontSize: 10 }}>{opt.sub}</span>
+          <span className="btn-sub">{opt.sub}</span>
         </button>
       ))}
     </div>
