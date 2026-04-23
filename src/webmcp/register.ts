@@ -44,7 +44,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   };
 
   register({
-    name: "minesweeper_start_new_game",
+    name: "start_new_game",
     description:
       "Start a new Minesweeper game. Use 'beginner' (9x9, 10 mines), 'intermediate' (16x16, 40 mines), 'expert' (16x30, 99 mines), or 'custom' to supply rows, cols, and mines.",
     inputSchema: {
@@ -86,7 +86,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   });
 
   register({
-    name: "minesweeper_reveal_cell",
+    name: "reveal_cell",
     description:
       "Reveal the cell at (row, col). Rows and cols are zero-indexed. Reveals cascade for empty cells. Revealing a mine ends the game. Returns the updated board and status.",
     inputSchema: {
@@ -112,7 +112,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   });
 
   register({
-    name: "minesweeper_toggle_flag",
+    name: "toggle_flag",
     description:
       "Toggle a flag on the hidden cell at (row, col). Flags mark suspected mines and prevent accidental reveal. Ignored on already-revealed cells.",
     inputSchema: {
@@ -138,7 +138,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   });
 
   register({
-    name: "minesweeper_chord_cell",
+    name: "chord_cell",
     description:
       "Chord on a revealed numbered cell at (row, col): if exactly the cell's number of flags is placed on its neighbors, reveal all other neighbors at once. Fails (and warns) if flag count doesn't match. If any flag is wrong, you'll hit a mine.",
     inputSchema: {
@@ -164,7 +164,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   });
 
   register({
-    name: "minesweeper_get_board_state",
+    name: "get_board_state",
     description:
       "Return the full current board state as the agent sees it: cell states ('hidden', 'flagged', 'revealed-empty', 'revealed-number' with adjacentMines, or 'revealed-mine'), dimensions, mines remaining, elapsed time, and game status.",
     annotations: { readOnlyHint: true },
@@ -179,7 +179,7 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
   });
 
   register({
-    name: "minesweeper_get_game_status",
+    name: "get_game_status",
     description:
       "Return a compact summary: status ('idle', 'playing', 'won', 'lost'), rows, cols, mines, minesRemaining, cellsRevealed, elapsedMs.",
     annotations: { readOnlyHint: true },

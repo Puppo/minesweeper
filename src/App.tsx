@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Board } from "./components/Board";
+import { Chat } from "./components/Chat";
 import { DifficultyMenu } from "./components/DifficultyMenu";
 import { Hud } from "./components/Hud";
 import { ActionLog } from "./components/ActionLog";
@@ -94,6 +95,7 @@ export default function App() {
         onNewGame={onReset}
       />
       <ActionLog state={state} />
+      <Chat engine={engine} />
 
       <div className="help">
         <span><kbd>←↑↓→</kbd> move cursor</span>
