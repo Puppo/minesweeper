@@ -9,7 +9,7 @@ const SESSION_OPTIONS = {
   expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
 };
 
-const SYSTEM_PROMPT = `You are the in-browser assistant for a Minesweeper game. Every user turn begins with the current board rendered as ASCII, followed by the user's message.
+const SYSTEM_PROMPT = `You are the in-browser assistant for a Minesweeper game. Every user turn begins with the current board rendered as ASCII, followed by a list of valid hidden-cell coordinates, followed by the user's message.
 
 Reply with a single JSON object that matches the required schema:
 - reasoning: one short sentence explaining your choice.
@@ -20,7 +20,11 @@ Reply with a single JSON object that matches the required schema:
 
 Rules:
 - Row indexes count top-down, column indexes left-to-right, all zero-based.
+- reveal_cell MUST target a hidden cell (glyph "." in the board). Never target a cell that is already revealed ("_", "1"-"8", "*") or flagged ("F"). If in doubt, cross-check against the "Hidden cells" list.
+- toggle_flag MUST target a hidden (".") or flagged ("F") cell — never a revealed one.
+- chord_cell MUST target a revealed number cell ("1"-"8") where the number of adjacent flags already equals that number.
 - Only reveal cells you are confident are safe. Flag cells you suspect hide a mine.
+- If no safe move is certain, prefer "chat_only" and explain your reasoning instead of guessing.
 - Board legend: "." hidden, "F" flagged, "_" revealed empty, "1"-"8" adjacent-mine count, "*" revealed mine.`;
 
 export const AGENT_RESPONSE_SCHEMA = {
@@ -110,9 +114,81 @@ export function formatBoardAsText(view: PublicBoardView): string {
   ].join("\n");
 }
 
+const MAX_HIDDEN_CELL_LIST = 120;
+
+function describeHiddenCells(view: PublicBoardView): string {
+  const hidden: string[] = [];
+  for (let r = 0; r < view.rows; r++) {
+    for (let c = 0; c < view.cols; c++) {
+      if (view.cells[r][c].state === "hidden") {
+        hidden.push(`(${r},${c})`);
+      }
+    }
+  }
+  const total = view.rows * view.cols;
+  if (hidden.length === 0) {
+    return "Hidden cells: none remain.";
+  }
+  if (hidden.length === total) {
+    return `Hidden cells: all ${total} cells are hidden (no reveals yet) — any coordinate in range is valid.`;
+  }
+  if (hidden.length > MAX_HIDDEN_CELL_LIST) {
+    return `Hidden cells: ${hidden.length} of ${total} cells are hidden. Read the ASCII board and only target coordinates whose glyph is "." (or "F" for toggle_flag).`;
+  }
+  return `Hidden cells (valid reveal targets): ${hidden.join(", ")}`;
+}
+
 export function composeUserMessage(engine: MinesweeperEngine, text: string): string {
-  const board = formatBoardAsText(engine.getPublicView());
-  return `Current board:\n${board}\n\nUser: ${text}`;
+  const view = engine.getPublicView();
+  const board = formatBoardAsText(view);
+  const hiddenSection = describeHiddenCells(view);
+  return `Current board:\n${board}\n\n${hiddenSection}\n\nUser: ${text}`;
+}
+
+export type AgentActionValidation = { ok: true } | { ok: false; reason: string };
+
+export function validateAgentAction(
+  engine: MinesweeperEngine,
+  action: AgentAction,
+): AgentActionValidation {
+  if (action.kind === "chat_only" || action.kind === "start_new_game") {
+    return { ok: true };
+  }
+  const view = engine.getPublicView();
+  const { row, col } = action;
+  if (row < 0 || row >= view.rows || col < 0 || col >= view.cols) {
+    return {
+      ok: false,
+      reason: `(${row}, ${col}) is out of bounds (board is ${view.rows}×${view.cols}).`,
+    };
+  }
+  const cell = view.cells[row][col];
+  switch (action.kind) {
+    case "reveal_cell":
+      if (cell.state !== "hidden") {
+        return {
+          ok: false,
+          reason: `(${row}, ${col}) is already ${cell.state} — reveal_cell only works on hidden cells (glyph ".").`,
+        };
+      }
+      return { ok: true };
+    case "toggle_flag":
+      if (cell.state !== "hidden" && cell.state !== "flagged") {
+        return {
+          ok: false,
+          reason: `(${row}, ${col}) is ${cell.state} — toggle_flag only works on hidden or flagged cells.`,
+        };
+      }
+      return { ok: true };
+    case "chord_cell":
+      if (cell.state !== "revealed-number") {
+        return {
+          ok: false,
+          reason: `(${row}, ${col}) is ${cell.state} — chord_cell only works on revealed number cells (glyph "1"-"8").`,
+        };
+      }
+      return { ok: true };
+  }
 }
 
 export function parseAgentResponse(raw: string): AgentResponse {

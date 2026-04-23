@@ -16,6 +16,7 @@ import {
   dispatchAgentAction,
   parseAgentResponse,
   probeAvailability,
+  validateAgentAction,
   type ChatAvailability,
 } from "../chat/session";
 
@@ -137,34 +138,32 @@ export function Chat({ engine }: ChatProps) {
         role: "user",
         text: trimmed,
       };
-      const assistantId = nextId();
-      const assistantMessage: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        text: "",
-        pending: true,
-      };
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      const firstAssistantId = nextId();
+      setMessages((prev) => [
+        ...prev,
+        userMessage,
+        { id: firstAssistantId, role: "assistant", text: "", pending: true },
+      ]);
       setInput("");
       setIsBusy(true);
 
-      const updateAssistant = (patch: Partial<ChatMessage>) => {
+      const updateMessage = (id: string, patch: Partial<ChatMessage>) => {
         setMessages((prev) =>
-          prev.map((msg) => (msg.id === assistantId ? { ...msg, ...patch } : msg)),
+          prev.map((msg) => (msg.id === id ? { ...msg, ...patch } : msg)),
         );
       };
 
-      try {
-        const session = await ensureSession();
+      const streamInto = async (
+        session: LanguageModel,
+        promptText: string,
+        assistantId: string,
+      ): Promise<string> => {
         const controller = new AbortController();
         abortRef.current = controller;
-
-        const composed = composeUserMessage(engine, trimmed);
-        const stream = session.promptStreaming(composed, {
+        const stream = session.promptStreaming(promptText, {
           signal: controller.signal,
           responseConstraint: AGENT_RESPONSE_SCHEMA,
         });
-
         let accumulated = "";
         const reader = stream.getReader();
         try {
@@ -173,31 +172,93 @@ export function Chat({ engine }: ChatProps) {
             if (done) break;
             if (typeof value === "string") {
               accumulated += value;
-              updateAssistant({ text: accumulated });
+              updateMessage(assistantId, { text: accumulated });
             }
           }
         } finally {
           reader.releaseLock();
         }
+        return accumulated;
+      };
 
-        let parsed;
+      const parseOrFail = (
+        raw: string,
+        assistantId: string,
+      ): ReturnType<typeof parseAgentResponse> | null => {
         try {
-          parsed = parseAgentResponse(accumulated);
+          return parseAgentResponse(raw);
         } catch (parseErr) {
           const reason =
             parseErr instanceof Error ? parseErr.message : String(parseErr);
-          updateAssistant({
-            text: `Could not parse response (${reason}):\n${accumulated || "(empty)"}`,
+          updateMessage(assistantId, {
+            text: `Could not parse response (${reason}):\n${raw || "(empty)"}`,
             pending: false,
           });
           setError(`Parse error: ${reason}`);
-          return;
+          return null;
         }
+      };
 
-        updateAssistant({
+      try {
+        const session = await ensureSession();
+
+        const firstRaw = await streamInto(
+          session,
+          composeUserMessage(engine, trimmed),
+          firstAssistantId,
+        );
+        let parsed = parseOrFail(firstRaw, firstAssistantId);
+        if (!parsed) return;
+
+        updateMessage(firstAssistantId, {
           text: parsed.reasoning || "(no reasoning provided)",
           pending: false,
         });
+
+        const firstCheck = validateAgentAction(engine, parsed.action);
+        if (!firstCheck.ok) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "action",
+              text: `Invalid suggestion: ${firstCheck.reason} Retrying…`,
+            },
+          ]);
+
+          const retryAssistantId = nextId();
+          setMessages((prev) => [
+            ...prev,
+            { id: retryAssistantId, role: "assistant", text: "", pending: true },
+          ]);
+
+          const retryPrompt =
+            `Your previous action was invalid: ${firstCheck.reason} ` +
+            `Reply with a different action that obeys the rules — only target coordinates from the "Hidden cells" list, or use "chat_only" if no safe move is certain.`;
+
+          const retryRaw = await streamInto(session, retryPrompt, retryAssistantId);
+          const retryParsed = parseOrFail(retryRaw, retryAssistantId);
+          if (!retryParsed) return;
+
+          updateMessage(retryAssistantId, {
+            text: retryParsed.reasoning || "(no reasoning provided)",
+            pending: false,
+          });
+          parsed = retryParsed;
+
+          const secondCheck = validateAgentAction(engine, parsed.action);
+          if (!secondCheck.ok) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: nextId(),
+                role: "action",
+                text: `Still invalid after retry: ${secondCheck.reason} Skipping action.`,
+              },
+            ]);
+            return;
+          }
+        }
 
         if (parsed.action.kind !== "chat_only") {
           const summary = describeAgentAction(parsed.action);
@@ -222,10 +283,17 @@ export function Chat({ engine }: ChatProps) {
           : err instanceof Error
             ? err.message
             : String(err);
-        updateAssistant({
-          text: aborted ? "(cancelled)" : `Error: ${message}`,
-          pending: false,
-        });
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.pending
+              ? {
+                  ...msg,
+                  text: aborted ? "(cancelled)" : `Error: ${message}`,
+                  pending: false,
+                }
+              : msg,
+          ),
+        );
         if (!aborted) setError(message);
       } finally {
         abortRef.current = null;
