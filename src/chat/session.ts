@@ -4,6 +4,17 @@ import type { Difficulty, PublicBoardView } from "../game/types";
 const AGENT_DIFFICULTIES = ["beginner", "intermediate", "expert"] as const;
 type AgentDifficulty = (typeof AGENT_DIFFICULTIES)[number];
 
+export type ChatMode = "help" | "auto" | "chat";
+
+export const MODE_HINTS: Record<ChatMode, string> = {
+  help: "",
+  auto:
+    "You are playing autonomously. Choose the single best next action. " +
+    "Use chat_only ONLY if no safe move is logically deducible — that will pause the game.",
+  chat:
+    "Conversation mode: discuss the board only. Do not modify the board — use chat_only.",
+};
+
 const SESSION_OPTIONS = {
   expectedInputs: [{ type: "text" as const, languages: ["en"] }],
   expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
@@ -24,7 +35,10 @@ Rules:
 - toggle_flag MUST target a hidden (".") or flagged ("F") cell — never a revealed one.
 - chord_cell MUST target a revealed number cell ("1"-"8") where the number of adjacent flags already equals that number.
 - Only reveal cells you are confident are safe. Flag cells you suspect hide a mine.
+- Flagging is a productive move and often the right answer. Look for forced flags first: for any revealed number N at (r,c), if the count of its hidden neighbours plus the count of its already-flagged neighbours equals N, then EVERY hidden neighbour is a mine — pick one and toggle_flag it. Place flags before guessing reveals.
+- After flagging, re-check: for any revealed number N at (r,c), if it already has N flagged neighbours, every other hidden neighbour is provably safe and is a great reveal_cell target.
 - If no safe move is certain, prefer "chat_only" and explain your reasoning instead of guessing.
+- The board snapshot in the current user turn is the only source of truth. Always read the ASCII grid before choosing coordinates — never rely on memory of past board states.
 - Board legend: "." hidden, "F" flagged, "_" revealed empty, "1"-"8" adjacent-mine count, "*" revealed mine.`;
 
 export const AGENT_RESPONSE_SCHEMA = {
@@ -138,11 +152,17 @@ function describeHiddenCells(view: PublicBoardView): string {
   return `Hidden cells (valid reveal targets): ${hidden.join(", ")}`;
 }
 
-export function composeUserMessage(engine: MinesweeperEngine, text: string): string {
+export function composeUserMessage(
+  engine: MinesweeperEngine,
+  text: string,
+  mode?: ChatMode,
+): string {
   const view = engine.getPublicView();
   const board = formatBoardAsText(view);
   const hiddenSection = describeHiddenCells(view);
-  return `Current board:\n${board}\n\n${hiddenSection}\n\nUser: ${text}`;
+  const hint = mode ? MODE_HINTS[mode] : "";
+  const prefix = hint ? `${hint}\n\n` : "";
+  return `${prefix}Current board:\n${board}\n\n${hiddenSection}\n\nUser: ${text}`;
 }
 
 export type AgentActionValidation = { ok: true } | { ok: false; reason: string };

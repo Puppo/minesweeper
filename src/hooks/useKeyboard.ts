@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import type { MinesweeperEngine } from "../game/engine";
 
-export function useKeyboard(engine: MinesweeperEngine) {
+export function useKeyboard(engine: MinesweeperEngine, disabled = false) {
   useEffect(() => {
+    if (disabled) return;
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
@@ -71,5 +72,5 @@ export function useKeyboard(engine: MinesweeperEngine) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [engine]);
+  }, [engine, disabled]);
 }

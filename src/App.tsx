@@ -38,9 +38,10 @@ export default function App() {
   const [flagMode, setFlagMode] = useState(false);
   const [bestTimes, setBestTimes] = useState<BestTimes>(() => loadBestTimes());
   const [isNewBest, setIsNewBest] = useState(false);
+  const [autoPlaying, setAutoPlaying] = useState(false);
   const lastStatusRef = useRef(state.status);
 
-  useKeyboard(engine);
+  useKeyboard(engine, autoPlaying);
 
   useEffect(() => {
     const handle = registerWebMcpTools(engine);
@@ -163,6 +164,7 @@ export default function App() {
             flagMode={flagMode}
             bestTimeSeconds={bestTime}
             isNewBest={isNewBest}
+            interactive={!autoPlaying}
             onReveal={onReveal}
             onFlag={onFlag}
             onChord={onChord}
@@ -196,7 +198,7 @@ export default function App() {
         </div>
 
         <aside className="side-col">
-          <Chat engine={engine} />
+          <Chat engine={engine} onAutoPlayChange={setAutoPlaying} />
           <ActionLog state={state} />
         </aside>
       </div>

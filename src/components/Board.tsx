@@ -7,6 +7,7 @@ interface BoardProps {
   flagMode: boolean;
   bestTimeSeconds: number | null;
   isNewBest: boolean;
+  interactive?: boolean;
   onReveal: (row: number, col: number) => void;
   onFlag: (row: number, col: number) => void;
   onChord: (row: number, col: number) => void;
@@ -25,6 +26,7 @@ export function Board({
   flagMode,
   bestTimeSeconds,
   isNewBest,
+  interactive = true,
   onReveal,
   onFlag,
   onChord,
@@ -44,8 +46,22 @@ export function Board({
     [config.cols, config.rows],
   );
 
+  const wrapClasses = [
+    "panel",
+    "board-wrap",
+    flagMode ? "flag-mode" : "",
+    !interactive ? "non-interactive" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={`panel board-wrap ${flagMode ? "flag-mode" : ""}`}>
+    <div className={wrapClasses}>
+      {!interactive && (
+        <div className="board-lock-banner" aria-live="polite">
+          AI is playing — board input disabled
+        </div>
+      )}
       <div className="board" style={gridStyle}>
         {cells.map((row, r) =>
           row.map((cell, c) => (
