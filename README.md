@@ -2,7 +2,6 @@
 
 ### *WebMCP Edition — Play with mouse, keyboard, or let an AI drive*
 
-![Status](https://img.shields.io/badge/status-production ready-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)
 ![React](https://img.shields.io/badge/React-19.2-blue)
 ![Vite](https://img.shields.io/badge/Vite-8.0-646cff)
