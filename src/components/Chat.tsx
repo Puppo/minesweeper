@@ -120,6 +120,7 @@ export function Chat({ engine, onAutoPlayChange }: ChatProps) {
   const abortRef = useRef<AbortController | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const disposedRef = useRef(false);
+  const lastNewGameTsRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +148,17 @@ export function Chat({ engine, onAutoPlayChange }: ChatProps) {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    return engine.subscribe((state) => {
+      const last = state.lastAction;
+      if (!last || last.kind !== "new-game") return;
+      if (last.timestamp === lastNewGameTsRef.current) return;
+      lastNewGameTsRef.current = last.timestamp;
+      setMessages([]);
+      setError(null);
+    });
+  }, [engine]);
 
   const ensureSession = useCallback(async () => {
     if (sessionRef.current) return sessionRef.current;

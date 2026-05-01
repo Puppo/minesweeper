@@ -16,7 +16,11 @@ export function ActionLog({ state }: ActionLogProps) {
     if (!action) return;
     if (action.timestamp === lastTimestamp.current) return;
     lastTimestamp.current = action.timestamp;
-    setEntries((prev) => [action, ...prev].slice(0, MAX_ENTRIES));
+    setEntries((prev) =>
+      action.kind === "new-game"
+        ? [action]
+        : [action, ...prev].slice(0, MAX_ENTRIES),
+    );
   }, [state.lastAction]);
 
   return (

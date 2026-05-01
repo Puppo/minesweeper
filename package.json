@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@types/dom-chromium-ai": "^0.0.16",
