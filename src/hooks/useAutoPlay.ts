@@ -4,12 +4,14 @@ import {
   runAutoPlay,
   type AgentTurnEvents,
   type AutoPlayReason,
+  type AutoStrategy,
 } from "../chat/agent";
 
 export interface UseAutoPlayOptions {
   engine: MinesweeperEngine;
   ensureSession: () => Promise<LanguageModel>;
   events: AgentTurnEvents;
+  autoStrategy: AutoStrategy;
   onComplete?: (reason: AutoPlayReason, moves: number) => void;
 }
 
@@ -23,7 +25,7 @@ export interface AutoPlayController {
 }
 
 export function useAutoPlay(opts: UseAutoPlayOptions): AutoPlayController {
-  const { engine, ensureSession, events, onComplete } = opts;
+  const { engine, ensureSession, events, autoStrategy, onComplete } = opts;
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [moveCount, setMoveCount] = useState(0);
@@ -58,6 +60,7 @@ export function useAutoPlay(opts: UseAutoPlayOptions): AutoPlayController {
         const result = await runAutoPlay(session, engine, {
           signal: controller.signal,
           events,
+          autoStrategy,
           newId: () =>
             Math.random().toString(36).slice(2) + Date.now().toString(36),
           onMove: (n) => {
@@ -83,7 +86,7 @@ export function useAutoPlay(opts: UseAutoPlayOptions): AutoPlayController {
         }
       }
     })();
-  }, [engine, ensureSession, events, onComplete]);
+  }, [engine, ensureSession, events, autoStrategy, onComplete]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

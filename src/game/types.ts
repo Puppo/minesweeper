@@ -44,7 +44,7 @@ export interface ActionLog {
     | "noop";
   row?: number;
   col?: number;
-  source: "human" | "agent";
+  source: "human" | "agent" | "solver" | "guess";
   timestamp: number;
   message: string;
 }
@@ -52,7 +52,12 @@ export interface ActionLog {
 export interface PublicCellView {
   row: number;
   col: number;
-  state: "hidden" | "flagged" | "revealed-empty" | "revealed-number" | "revealed-mine";
+  state:
+    | "hidden"
+    | "flagged"
+    | "revealed-empty"
+    | "revealed-number"
+    | "revealed-mine";
   adjacentMines?: number;
 }
 

@@ -1,10 +1,14 @@
 import type { ActionResult, MinesweeperEngine } from "../game/engine";
 import {
-  AGENT_RESPONSE_SCHEMA,
+  findBestGuess,
+  findDeterministicMove,
+  formatConstraintDigest,
+} from "../game/solver";
+import {
+  buildAgentResponseSchema,
   composeUserMessage,
   describeAgentAction,
   dispatchAgentAction,
-  formatBoardAsText,
   parseAgentResponse,
   validateAgentAction,
   type AgentAction,
@@ -20,12 +24,21 @@ export interface AgentTurnEvents {
   onError: (id: string, message: string) => void;
 }
 
+export type AutoStrategy = "solver" | "llm";
+
 export interface RunAgentTurnOptions {
   mode: ChatMode;
   userText: string;
   signal: AbortSignal;
   events: AgentTurnEvents;
   newId: () => string;
+  /**
+   * Only consulted when `mode === "auto"`:
+   *   - "solver": deterministic CSP solver only; pause if no forced move.
+   *   - "llm":    LLM strategist only; no deterministic short-circuit.
+   * Default: "solver".
+   */
+  autoStrategy?: AutoStrategy;
 }
 
 export type AgentTurnOutcome =
@@ -41,10 +54,11 @@ async function streamPrompt(
   signal: AbortSignal,
   assistantId: string,
   events: AgentTurnEvents,
+  responseConstraint: Record<string, unknown>,
 ): Promise<string> {
   const stream = session.promptStreaming(promptText, {
     signal,
-    responseConstraint: AGENT_RESPONSE_SCHEMA,
+    responseConstraint,
   });
   let accumulated = "";
   const reader = stream.getReader();
@@ -72,131 +86,96 @@ function listHiddenCoords(engine: MinesweeperEngine): string {
     }
   }
   if (out.length === 0) return "(none — every cell is revealed or flagged)";
-  if (out.length > 200) {
-    return `${out.slice(0, 200).join(", ")}, … (+${out.length - 200} more — read the ASCII board)`;
-  }
+  // No truncation: a complete authoritative list keeps the retry prompt from
+  // sending the model back to ASCII counting (which is what produced the
+  // already-revealed-cell errors).
   return out.join(", ");
 }
 
-function composeSolverMessage(engine: MinesweeperEngine): string {
-  const view = engine.getPublicView();
-  const board = formatBoardAsText(view);
-  return [
-    "DEDUCTION TASK: find ONE provably-forced move on the current board. Do NOT guess.",
-    "",
-    "A move is forced only when one of these two rules applies:",
-    "  • Forced flag: a revealed number N at (r,c) where the count of (hidden + flagged) neighbours equals N — every hidden neighbour MUST be a mine. Pick one and reply with toggle_flag.",
-    "  • Forced safe reveal: a revealed number N at (r,c) where the count of flagged neighbours already equals N — every remaining hidden neighbour MUST be safe. Pick one and reply with reveal_cell.",
-    "",
-    "If neither rule produces a forced move on this board, reply with action.kind = \"chat_only\" and reasoning = \"no forced move\".",
-    "",
-    "Cite the (r,c) of the number that forces your choice in the reasoning. Reply ONLY with the JSON action.",
-    "",
-    "Current board:",
-    board,
-    "",
-    `Hidden coordinates available: ${listHiddenCoords(engine)}`,
-  ].join("\n");
-}
-
 /**
- * Dedicated Prompt-API solver pass: ask the model to find one provably forced
- * move (or chat_only if none). Runs before the main strategist call to handle
- * deterministic positions reliably and to keep flagging in the rotation.
- *
- * Returns:
- *   - "dispatched" outcome on a successful, validated forced move (caller stops),
- *   - null on chat_only / unsupported action / invalid coords (caller falls
- *     through to the strategist),
- *   - propagates aborted/error outcomes so the caller can short-circuit.
+ * Deterministic-solver pass. Synchronous, no LLM call: finds one provably-forced
+ * move via constraint propagation (trivial + subset rules), or null if the
+ * board has no forced move. Caller decides what to do with null:
+ *   - auto mode: pause (chat_only),
+ *   - help mode: fall through to the LLM strategist for advice.
  */
-async function runSolverTurn(
-  masterSession: LanguageModel,
+function runDeterministicSolverTurn(
   engine: MinesweeperEngine,
-  signal: AbortSignal,
   events: AgentTurnEvents,
   newId: () => string,
-): Promise<AgentTurnOutcome | null> {
-  let session: LanguageModel = masterSession;
-  let ownsSession = false;
-  try {
-    session = await masterSession.clone({ signal });
-    ownsSession = true;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return { status: "aborted" };
-    }
-    console.warn("[minesweeper] solver clone failed; using master session", err);
-  }
+): AgentTurnOutcome | null {
+  const move = findDeterministicMove(engine.getPublicView());
+  if (!move) return null;
+
+  const action: AgentAction =
+    move.kind === "flag"
+      ? { kind: "toggle_flag", row: move.row, col: move.col }
+      : move.kind === "chord"
+        ? { kind: "chord_cell", row: move.row, col: move.col }
+        : { kind: "reveal_cell", row: move.row, col: move.col };
 
   const id = newId();
   events.onAssistantStart(id);
+  events.onAssistantDone(id, {
+    reasoning: `Solver: ${move.reason}`,
+    action,
+  });
 
-  try {
-    const raw = await streamPrompt(
-      session,
-      composeSolverMessage(engine),
-      signal,
-      id,
-      events,
+  // Defensive — the solver shouldn't ever produce an invalid action, but if a
+  // caller mutated the engine between view-snapshot and dispatch, surface it
+  // rather than crashing.
+  const validation = validateAgentAction(engine, action);
+  if (!validation.ok) {
+    events.onActionLog(
+      `Solver produced invalid move (${validation.reason}); skipping.`,
     );
-
-    let parsed: AgentResponse;
-    try {
-      parsed = parseAgentResponse(raw);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      events.onError(id, `Solver parse error (${reason}):\n${raw || "(empty)"}`);
-      return null; // fall through to strategist
-    }
-
-    // Tag the assistant bubble so the user can tell solver bubbles from
-    // strategist bubbles.
-    events.onAssistantDone(id, {
-      reasoning: `Solver: ${parsed.reasoning || "(no reasoning)"}`,
-      action: parsed.action,
-    });
-
-    const action = parsed.action;
-    if (action.kind === "chat_only") {
-      // No forced move — let the strategist try.
-      return null;
-    }
-    if (action.kind !== "reveal_cell" && action.kind !== "toggle_flag") {
-      // Solver should only return reveal/flag/chat_only. Anything else (chord,
-      // start_new_game) is treated as no forced move — fall to strategist.
-      return null;
-    }
-
-    const validation = validateAgentAction(engine, action);
-    if (!validation.ok) {
-      events.onActionLog(
-        `Solver suggestion invalid (${validation.reason}); deferring to strategist.`,
-      );
-      return null;
-    }
-
-    const summary = describeAgentAction(action);
-    const result = dispatchAgentAction(engine, action);
-    const detail = result ? `${result.ok ? "✓" : "✗"} ${result.message}` : summary;
-    events.onActionLog(`${summary} (solver) — ${detail}`);
-    return { status: "dispatched", action, result };
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return { status: "aborted" };
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    events.onError(id, `Solver error: ${message}`);
-    return null; // strategist may still recover
-  } finally {
-    if (ownsSession) {
-      try {
-        session.destroy();
-      } catch {
-        // ignore
-      }
-    }
+    return null;
   }
+
+  const summary = describeAgentAction(action);
+  const result = dispatchAgentAction(engine, action, "solver");
+  const detail = result
+    ? `${result.ok ? "✓" : "✗"} ${result.message}`
+    : summary;
+  events.onActionLog(`${summary} (solver) — ${detail}`);
+  return { status: "dispatched", action, result };
+}
+
+/**
+ * Probabilistic fallback: reveal the hidden cell with the lowest estimated
+ * mine probability. Used when no deterministically-forced move exists.
+ * Returns null if there are no hidden cells (game should already be resolved).
+ */
+function runBestGuessTurn(
+  engine: MinesweeperEngine,
+  events: AgentTurnEvents,
+  newId: () => string,
+): AgentTurnOutcome | null {
+  const guess = findBestGuess(engine.getPublicView());
+  if (!guess) return null;
+
+  const action: AgentAction = {
+    kind: "reveal_cell",
+    row: guess.row,
+    col: guess.col,
+  };
+  const validation = validateAgentAction(engine, action);
+  if (!validation.ok) return null;
+
+  const id = newId();
+  events.onAssistantStart(id);
+  events.onAssistantDone(id, {
+    reasoning: `Probabilistic guess: ${guess.reason}`,
+    action,
+  });
+
+  const summary = describeAgentAction(action);
+  const result = dispatchAgentAction(engine, action, "guess");
+  const detail = result
+    ? `${result.ok ? "✓" : "✗"} ${result.message}`
+    : summary;
+  events.onActionLog(`${summary} (probabilistic guess) — ${detail}`);
+  return { status: "dispatched", action, result };
 }
 
 export async function runAgentTurn(
@@ -205,15 +184,29 @@ export async function runAgentTurn(
   opts: RunAgentTurnOptions,
 ): Promise<AgentTurnOutcome> {
   const { mode, userText, signal, events, newId } = opts;
+  const autoStrategy: AutoStrategy = opts.autoStrategy ?? "solver";
 
-  // Dedicated solver pass via Prompt API — in help/auto modes, ask the model
-  // to find one provably-forced move first. If it does, dispatch directly and
-  // skip the strategist call. Aborted/dispatched outcomes short-circuit;
-  // null falls through to the strategist below.
-  if (mode !== "chat") {
-    const solverOutcome = await runSolverTurn(masterSession, engine, signal, events, newId);
-    if (solverOutcome?.status === "aborted") return solverOutcome;
-    if (solverOutcome?.status === "dispatched") return solverOutcome;
+  // Run the deterministic solver only when the user explicitly chose
+  // autoStrategy === "solver". In llm strategy and help mode the LLM is the
+  // primary decision-maker; the solver must not silently pre-empt it.
+  const useDeterministicSolver = mode === "auto" && autoStrategy === "solver";
+
+  if (useDeterministicSolver) {
+    const solverOutcome = runDeterministicSolverTurn(engine, events, newId);
+    if (solverOutcome) return solverOutcome;
+    if (mode === "auto" && autoStrategy === "solver") {
+      // Solver-only mode: fall back to probabilistic best guess, then pause.
+      const guessOutcome = runBestGuessTurn(engine, events, newId);
+      if (guessOutcome) return guessOutcome;
+      events.onActionLog(
+        "No forced move found — pausing rather than guess. Play one yourself, then resume.",
+      );
+      return {
+        status: "chat_only",
+        reasoning: "No deterministically-forced move on this board.",
+      };
+    }
+    // For auto+llm and help: fall through to the LLM path.
   }
 
   // Per-turn clone so the model sees only the system prompt + this turn's
@@ -227,7 +220,10 @@ export async function runAgentTurn(
     if (err instanceof DOMException && err.name === "AbortError") {
       return { status: "aborted" };
     }
-    console.warn("[minesweeper] session.clone() failed; using master session", err);
+    console.warn(
+      "[minesweeper] session.clone() failed; using master session",
+      err,
+    );
   }
 
   const firstId = newId();
@@ -240,6 +236,7 @@ export async function runAgentTurn(
       signal,
       firstId,
       events,
+      buildAgentResponseSchema(engine.getPublicView()),
     );
 
     let parsed: AgentResponse;
@@ -247,7 +244,10 @@ export async function runAgentTurn(
       parsed = parseAgentResponse(firstRaw);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      events.onError(firstId, `Could not parse response (${reason}):\n${firstRaw || "(empty)"}`);
+      events.onError(
+        firstId,
+        `Could not parse response (${reason}):\n${firstRaw || "(empty)"}`,
+      );
       return { status: "error", message: `Parse error: ${reason}` };
     }
     events.onAssistantDone(firstId, parsed);
@@ -262,7 +262,7 @@ export async function runAgentTurn(
       return { status: "chat_only", reasoning: parsed.reasoning };
     }
 
-    // Filter start_new_game in auto mode — surprise resets are bad UX.
+    // Filter start_new_game in auto+LLM — surprise resets are bad UX.
     if (mode === "auto" && action.kind === "start_new_game") {
       events.onActionLog(
         "(auto mode) Ignored start_new_game suggestion — pausing instead.",
@@ -277,14 +277,26 @@ export async function runAgentTurn(
       const retryId = newId();
       events.onAssistantStart(retryId);
 
-      const retryPrompt =
-        `Your previous action was invalid: ${validation.reason}\n` +
-        `Pick again. The cells you may target right now are exactly: ${listHiddenCoords(engine)}.\n` +
-        `Reply with a different action — only target a coordinate from that list, or use "chat_only" if no safe move is certain.`;
+      const retryPrompt = [
+        `Your previous action was invalid: ${validation.reason}`,
+        "",
+        formatConstraintDigest(engine.getPublicView()),
+        "",
+        `Hidden cells (the ONLY valid reveal targets): ${listHiddenCoords(engine)}`,
+        "",
+        "Pick again. Emit a coordinate that appears verbatim in the Hidden cells list, or reply with chat_only if no forced move can be derived from the digest.",
+      ].join("\n");
 
       let retryRaw: string;
       try {
-        retryRaw = await streamPrompt(session, retryPrompt, signal, retryId, events);
+        retryRaw = await streamPrompt(
+          session,
+          retryPrompt,
+          signal,
+          retryId,
+          events,
+          buildAgentResponseSchema(engine.getPublicView()),
+        );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return { status: "aborted" };
@@ -297,7 +309,10 @@ export async function runAgentTurn(
         retryParsed = parseAgentResponse(retryRaw);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        events.onError(retryId, `Could not parse response (${reason}):\n${retryRaw || "(empty)"}`);
+        events.onError(
+          retryId,
+          `Could not parse response (${reason}):\n${retryRaw || "(empty)"}`,
+        );
         return { status: "error", message: `Parse error: ${reason}` };
       }
       events.onAssistantDone(retryId, retryParsed);
@@ -320,18 +335,27 @@ export async function runAgentTurn(
 
       validation = validateAgentAction(engine, action);
       if (!validation.ok) {
-        events.onActionLog(`Still invalid after retry: ${validation.reason} Skipping action.`);
+        events.onActionLog(
+          `Still invalid after retry: ${validation.reason} Skipping action.`,
+        );
         return { status: "invalid", reason: validation.reason };
       }
     }
 
     if (action.kind === "chat_only") {
+      // In auto mode the LLM deferred — fall back to probabilistic best guess.
+      if (mode === "auto") {
+        const guessOutcome = runBestGuessTurn(engine, events, newId);
+        if (guessOutcome) return guessOutcome;
+      }
       return { status: "chat_only", reasoning: parsed.reasoning };
     }
 
     const summary = describeAgentAction(action);
-    const result = dispatchAgentAction(engine, action);
-    const detail = result ? `${result.ok ? "✓" : "✗"} ${result.message}` : summary;
+    const result = dispatchAgentAction(engine, action, "agent");
+    const detail = result
+      ? `${result.ok ? "✓" : "✗"} ${result.message}`
+      : summary;
     events.onActionLog(`${summary} — ${detail}`);
 
     return { status: "dispatched", action, result };
@@ -360,6 +384,8 @@ export interface RunAutoPlayOptions {
   delayMs?: number;
   maxIterations?: number;
   onMove?: (n: number, outcome: AgentTurnOutcome) => void;
+  /** "solver" (default) or "llm" — see RunAgentTurnOptions.autoStrategy. */
+  autoStrategy?: AutoStrategy;
 }
 
 export type AutoPlayReason =
@@ -403,6 +429,7 @@ export async function runAutoPlay(
   opts: RunAutoPlayOptions,
 ): Promise<AutoPlayResult> {
   const { signal, events, newId, onMove } = opts;
+  const autoStrategy: AutoStrategy = opts.autoStrategy ?? "solver";
   const delayMs = opts.delayMs ?? 250;
   const view = engine.getPublicView();
   const cap = opts.maxIterations ?? view.rows * view.cols;
@@ -428,6 +455,7 @@ export async function runAutoPlay(
       signal,
       events,
       newId,
+      autoStrategy,
     });
 
     if (outcome.status === "aborted") return { moves, reason: "aborted" };

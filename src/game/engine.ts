@@ -1,3 +1,4 @@
+import { NEIGHBOR_OFFSETS } from "./geometry";
 import {
   ActionLog,
   BoardConfig,
@@ -24,12 +25,6 @@ export interface ActionResult {
   message: string;
   action: ActionLog;
 }
-
-const NEIGHBOR_OFFSETS: Array<[number, number]> = [
-  [-1, -1], [-1, 0], [-1, 1],
-  [0, -1],           [0, 1],
-  [1, -1],  [1, 0],  [1, 1],
-];
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -99,7 +94,13 @@ function placeMines(
       for (const [dr, dc] of NEIGHBOR_OFFSETS) {
         const nr = r + dr;
         const nc = c + dc;
-        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc].isMine) {
+        if (
+          nr >= 0 &&
+          nr < rows &&
+          nc >= 0 &&
+          nc < cols &&
+          grid[nr][nc].isMine
+        ) {
           count++;
         }
       }
@@ -113,7 +114,11 @@ function resolveConfig(input: NewGameInput): BoardConfig {
     const rows = clamp(Math.floor(input.rows ?? 16), 5, 30);
     const cols = clamp(Math.floor(input.cols ?? 16), 5, 40);
     const maxMines = rows * cols - 9;
-    const mines = clamp(Math.floor(input.mines ?? Math.round(rows * cols * 0.18)), 1, maxMines);
+    const mines = clamp(
+      Math.floor(input.mines ?? Math.round(rows * cols * 0.18)),
+      1,
+      maxMines,
+    );
     return { rows, cols, mines, difficulty: "custom" };
   }
   const preset = DIFFICULTY_PRESETS[input.difficulty];
@@ -163,12 +168,18 @@ export class MinesweeperEngine {
   }
 
   getPublicView(): PublicBoardView {
-    const { config, cells, status, flagsPlaced, cellsRevealed, startedAt, endedAt, cursor } =
-      this.state;
+    const {
+      config,
+      cells,
+      status,
+      flagsPlaced,
+      cellsRevealed,
+      startedAt,
+      endedAt,
+      cursor,
+    } = this.state;
 
-    const elapsedMs = startedAt
-      ? (endedAt ?? Date.now()) - startedAt
-      : 0;
+    const elapsedMs = startedAt ? (endedAt ?? Date.now()) - startedAt : 0;
 
     const publicCells: PublicCellView[][] = cells.map((row) =>
       row.map((cell): PublicCellView => {
@@ -211,7 +222,10 @@ export class MinesweeperEngine {
     };
   }
 
-  newGame(input: NewGameInput, source: "human" | "agent" = "human"): ActionResult {
+  newGame(
+    input: NewGameInput,
+    source: "human" | "agent" | "solver" | "guess" = "human",
+  ): ActionResult {
     const config = resolveConfig(input);
     this.state = this.buildFreshState(config);
     this.minesPlaced = false;
@@ -223,7 +237,12 @@ export class MinesweeperEngine {
     };
     this.state.lastAction = action;
     this.emit();
-    return { ok: true, status: this.state.status, message: action.message, action };
+    return {
+      ok: true,
+      status: this.state.status,
+      message: action.message,
+      action,
+    };
   }
 
   moveCursor(row: number, col: number): void {
@@ -248,7 +267,11 @@ export class MinesweeperEngine {
     return this.state.status === "won" || this.state.status === "lost";
   }
 
-  reveal(row: number, col: number, source: "human" | "agent" = "human"): ActionResult {
+  reveal(
+    row: number,
+    col: number,
+    source: "human" | "agent" | "solver" | "guess" = "human",
+  ): ActionResult {
     const invalid = this.assertInBounds(row, col);
     if (invalid) return this.noop(invalid, source, row, col);
     if (this.isTerminal()) {
@@ -262,7 +285,12 @@ export class MinesweeperEngine {
 
     const cell = this.state.cells[row][col];
     if (cell.revealed) {
-      return this.noop(`Cell (${row}, ${col}) is already revealed.`, source, row, col);
+      return this.noop(
+        `Cell (${row}, ${col}) is already revealed.`,
+        source,
+        row,
+        col,
+      );
     }
     if (cell.flagged) {
       return this.noop(
@@ -315,10 +343,19 @@ export class MinesweeperEngine {
     };
     this.state.lastAction = action;
     this.emit();
-    return { ok: true, status: this.state.status, message: action.message, action };
+    return {
+      ok: true,
+      status: this.state.status,
+      message: action.message,
+      action,
+    };
   }
 
-  toggleFlag(row: number, col: number, source: "human" | "agent" = "human"): ActionResult {
+  toggleFlag(
+    row: number,
+    col: number,
+    source: "human" | "agent" | "solver" | "guess" = "human",
+  ): ActionResult {
     const invalid = this.assertInBounds(row, col);
     if (invalid) return this.noop(invalid, source, row, col);
     if (this.isTerminal()) {
@@ -331,7 +368,12 @@ export class MinesweeperEngine {
     }
     const cell = this.state.cells[row][col];
     if (cell.revealed) {
-      return this.noop(`Cannot flag a revealed cell at (${row}, ${col}).`, source, row, col);
+      return this.noop(
+        `Cannot flag a revealed cell at (${row}, ${col}).`,
+        source,
+        row,
+        col,
+      );
     }
     cell.flagged = !cell.flagged;
     this.state.flagsPlaced += cell.flagged ? 1 : -1;
@@ -347,14 +389,28 @@ export class MinesweeperEngine {
     };
     this.state.lastAction = action;
     this.emit();
-    return { ok: true, status: this.state.status, message: action.message, action };
+    return {
+      ok: true,
+      status: this.state.status,
+      message: action.message,
+      action,
+    };
   }
 
-  chord(row: number, col: number, source: "human" | "agent" = "human"): ActionResult {
+  chord(
+    row: number,
+    col: number,
+    source: "human" | "agent" | "solver" | "guess" = "human",
+  ): ActionResult {
     const invalid = this.assertInBounds(row, col);
     if (invalid) return this.noop(invalid, source, row, col);
     if (this.isTerminal()) {
-      return this.noop(`Game is already ${this.state.status}.`, source, row, col);
+      return this.noop(
+        `Game is already ${this.state.status}.`,
+        source,
+        row,
+        col,
+      );
     }
     const cell = this.state.cells[row][col];
     if (!cell.revealed) {
@@ -435,7 +491,12 @@ export class MinesweeperEngine {
     };
     this.state.lastAction = action;
     this.emit();
-    return { ok: true, status: this.state.status, message: action.message, action };
+    return {
+      ok: true,
+      status: this.state.status,
+      message: action.message,
+      action,
+    };
   }
 
   private floodReveal(startRow: number, startCol: number): number {
@@ -475,7 +536,10 @@ export class MinesweeperEngine {
   private maybeFinishWin(): void {
     const { rows, cols, mines } = this.state.config;
     const safeCells = rows * cols - mines;
-    if (this.state.cellsRevealed >= safeCells && this.state.status === "playing") {
+    if (
+      this.state.cellsRevealed >= safeCells &&
+      this.state.status === "playing"
+    ) {
       this.state.status = "won";
       this.state.endedAt = Date.now();
       for (const row of this.state.cells) {
@@ -497,7 +561,7 @@ export class MinesweeperEngine {
 
   private noop(
     message: string,
-    source: "human" | "agent",
+    source: "human" | "agent" | "solver" | "guess",
     row?: number,
     col?: number,
   ): ActionResult {

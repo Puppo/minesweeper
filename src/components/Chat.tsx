@@ -18,6 +18,7 @@ import {
   runAgentTurn,
   type AgentTurnEvents,
   type AutoPlayReason,
+  type AutoStrategy,
 } from "../chat/agent";
 import { useAutoPlay } from "../hooks/useAutoPlay";
 
@@ -63,19 +64,36 @@ const MODES: { value: ChatMode; label: string; hint: string }[] = [
   { value: "chat", label: "Chat", hint: "Discuss the board (no moves)." },
 ];
 
+const STRATEGIES: { value: AutoStrategy; label: string; hint: string }[] = [
+  {
+    value: "solver",
+    label: "Solver",
+    hint: "Deterministic constraint-propagation solver. Never guesses, pauses on ambiguity.",
+  },
+  {
+    value: "llm",
+    label: "AI",
+    hint: "Browser language model plays autonomously. Slower, sometimes wrong.",
+  },
+];
+
 function autoCompleteSummary(
   reason: AutoPlayReason,
   moves: number,
   lastMessage: string,
+  strategy: AutoStrategy,
 ): string {
   const movesLabel = `${moves} move${moves === 1 ? "" : "s"}`;
+  const actor = strategy === "solver" ? "Solver" : "AI";
   switch (reason) {
     case "won":
-      return `AI won in ${movesLabel}. ${lastMessage}`.trim();
+      return `${actor} won in ${movesLabel}. ${lastMessage}`.trim();
     case "lost":
-      return `AI lost on move ${moves}. ${lastMessage}`.trim();
+      return `${actor} lost on move ${moves}. ${lastMessage}`.trim();
     case "chat_only":
-      return "Auto-play paused — AI sees no certain move. Click Resume to continue, or play a move yourself first.";
+      return strategy === "solver"
+        ? "Solver paused — no forced move on this board. Play one yourself, then resume."
+        : "AI paused — no certain move. Click Resume to continue, or play a move yourself first.";
     case "aborted":
       return `Auto-play stopped after ${movesLabel}.`;
     case "invalid":
@@ -89,6 +107,7 @@ function autoCompleteSummary(
 
 export function Chat({ engine, onAutoPlayChange }: ChatProps) {
   const [mode, setMode] = useState<ChatMode>("help");
+  const [autoStrategy, setAutoStrategy] = useState<AutoStrategy>("solver");
   const [availability, setAvailability] = useState<ChatAvailability>("unsupported");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -202,17 +221,18 @@ export function Chat({ engine, onAutoPlayChange }: ChatProps) {
         {
           id: nextId(),
           role: "action",
-          text: autoCompleteSummary(reason, moves, lastMsg),
+          text: autoCompleteSummary(reason, moves, lastMsg, autoStrategy),
         },
       ]);
     },
-    [engine],
+    [engine, autoStrategy],
   );
 
   const auto = useAutoPlay({
     engine,
     ensureSession,
     events,
+    autoStrategy,
     onComplete: handleAutoComplete,
   });
 
@@ -420,26 +440,47 @@ export function Chat({ engine, onAutoPlayChange }: ChatProps) {
 
       {mode === "auto" ? (
         <div className="chat-auto">
+          <div
+            className="chat-strategy"
+            role="radiogroup"
+            aria-label="Auto-play strategy"
+          >
+            <span className="chat-strategy-label">Strategy</span>
+            {STRATEGIES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                role="radio"
+                aria-checked={autoStrategy === s.value}
+                className={`chat-strategy-btn ${autoStrategy === s.value ? "active" : ""}`}
+                onClick={() => setAutoStrategy(s.value)}
+                disabled={disabled || auto.isRunning}
+                title={s.hint}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           <div className="chat-auto-status">
             {auto.isRunning ? (
               <>
                 <span className="chat-auto-dot running" />
-                Auto-play running · moves: {auto.moveCount}
+                Auto-play running · {autoStrategy === "solver" ? "solver" : "AI"} · moves: {auto.moveCount}
               </>
             ) : auto.isPaused ? (
               <>
                 <span className="chat-auto-dot paused" />
-                Paused — no certain move. Resume to retry.
+                Paused — {autoStrategy === "solver" ? "no forced move" : "no certain move"}. Resume to retry.
               </>
             ) : auto.lastReason ? (
               <>
                 <span className="chat-auto-dot done" />
-                Stopped ({auto.lastReason}) · moves: {auto.moveCount}
+                Stopped ({auto.lastReason}) · {autoStrategy === "solver" ? "solver" : "AI"} · moves: {auto.moveCount}
               </>
             ) : (
               <>
                 <span className="chat-auto-dot idle" />
-                Idle — press Start to let the AI play.
+                Idle — press Start to let the {autoStrategy === "solver" ? "solver" : "AI"} play.
               </>
             )}
           </div>
