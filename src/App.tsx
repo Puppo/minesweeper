@@ -114,6 +114,14 @@ export default function App() {
     [engine],
   );
 
+  const onCustomSelect = useCallback(
+    (rows: number, cols: number, mines: number) => {
+      engine.newGame({ difficulty: "custom", rows, cols, mines }, "human");
+      setIsNewBest(false);
+    },
+    [engine],
+  );
+
   const onReset = useCallback(() => {
     engine.newGame({ difficulty: state.config.difficulty }, "human");
     setIsNewBest(false);
@@ -151,6 +159,7 @@ export default function App() {
           <DifficultyMenu
             current={state.config.difficulty}
             onSelect={onSelectDifficulty}
+            onCustomSelect={onCustomSelect}
           />
           <Hud
             state={state}

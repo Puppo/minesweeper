@@ -1559,6 +1559,64 @@ body::after {
   }
 }
 
+.error-boundary {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.error-boundary h2 {
+  color: var(--cell-revealed);
+  margin: 0 0 8px;
+}
+.error-boundary p {
+  margin: 0 0 16px;
+}
+.error-boundary details {
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.error-boundary pre {
+  overflow-x: auto;
+  padding: 8px;
+  background: var(--bg-cell);
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.custom-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 8px;
+  border-top: 1px solid var(--border);
+}
+.custom-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.custom-inputs input {
+  width: 64px;
+  padding: 4px 6px;
+  font-size: 13px;
+  background: var(--bg-cell);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  text-align: center;
+}
+.custom-inputs input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+.custom-inputs .menu-btn {
+  align-self: flex-end;
+  padding: 6px 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::before,
   body::after,
