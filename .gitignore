@@ -4,3 +4,4 @@ dist
 .vite
 *.local
 .vscode
+.tokensave
