@@ -21,6 +21,33 @@ export const MODE_HINTS: Record<ChatMode, string> = {
   chat: "Conversation mode: discuss the board only. Do not modify the board — use chat_only.",
 };
 
+/**
+ * Sampling-mode presets supported by the Prompt API.
+ *
+ * As of Chrome 151, raw numerical params (temperature, topK) are no longer
+ * exposed to web page contexts — they were replaced by these semantic modes
+ * to keep behaviour consistent across model families. The browser maps the
+ * enum to whatever raw values its current underlying model prefers.
+ *
+ * See https://chromestatus.com for the latest on the Origin Trial.
+ */
+export type LanguageModelSamplingMode =
+  | "most-predictable"
+  | "predictable"
+  | "balanced"
+  | "creative"
+  | "most-creative";
+
+/**
+ * Default sampling mode for new chat sessions.
+ *
+ * The agent drives a constrained JSON Schema (a tagged union of legal moves),
+ * so consistency and adherence to the schema matter more than variety.
+ * "most-predictable" is the closest preset to the legacy low-temperature
+ * behaviour the agent was implicitly relying on.
+ */
+const DEFAULT_SAMPLING_MODE: LanguageModelSamplingMode = "most-predictable";
+
 const SESSION_OPTIONS = {
   expectedInputs: [{ type: "text" as const, languages: ["en"] }],
   expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
@@ -471,6 +498,14 @@ export async function probeAvailability(): Promise<ChatAvailability> {
 export interface CreateChatSessionOptions {
   onDownloadProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /**
+   * Categorical sampling mode for the session. Replaces the now-removed raw
+   * `temperature` / `topK` parameters. Defaults to "most-predictable" because
+   * the agent emits JSON conforming to a strict schema — consistency matters
+   * more than variety. Pass "creative" / "most-creative" if you want a
+   * brainstorming-style chat session instead.
+   */
+  samplingMode?: LanguageModelSamplingMode;
 }
 
 export async function createChatSession(
@@ -484,6 +519,7 @@ export async function createChatSession(
     ...SESSION_OPTIONS,
     initialPrompts: [{ role: "system", content: SYSTEM_PROMPT }],
     signal: options.signal,
+    samplingMode: options.samplingMode ?? DEFAULT_SAMPLING_MODE,
     monitor(monitor) {
       monitor.addEventListener("downloadprogress", (event) => {
         options.onDownloadProgress?.(event.loaded);
