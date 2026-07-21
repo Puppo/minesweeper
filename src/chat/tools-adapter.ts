@@ -1,5 +1,3 @@
-import { READ_ONLY_TOOL_NAMES } from "../webmcp/tools";
-
 export interface ToolCallEvents {
   onToolStart?: (name: string, input: Record<string, unknown>) => void;
   onToolEnd?: (
@@ -77,7 +75,7 @@ export function mcpToolsAsLanguageModelTools(
         if (
           opts.paceMs &&
           opts.paceMs > 0 &&
-          !READ_ONLY_TOOL_NAMES.has(tool.name)
+          !tool.annotations?.readOnlyHint
         ) {
           await sleep(opts.paceMs, opts.signal);
         }

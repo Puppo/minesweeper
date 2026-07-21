@@ -8,6 +8,8 @@ export interface DeterministicMove {
   row: number;
   col: number;
   reason: string;
+  /** Present only when the move is a probabilistic guess. */
+  mineProbability?: number;
 }
 
 /**
@@ -319,6 +321,7 @@ export function findBestGuess(view: PublicBoardView): DeterministicMove | null {
     kind: "reveal",
     row,
     col,
+    mineProbability: bestProb,
     reason: `Best probabilistic guess: (${row},${col}) has ~${(bestProb * 100).toFixed(1)}% mine probability.`,
   };
 }

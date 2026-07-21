@@ -1,4 +1,5 @@
 import type { ActionResult, MinesweeperEngine } from "../game/engine";
+import { formatMinesweeperGuideForPrompt } from "../game/guidance";
 import {
   buildConstraints,
   estimateMineProbabilities,
@@ -63,15 +64,12 @@ Reply with a single JSON object that matches the per-turn schema:
 - For chat_only: include only kind. Do NOT include cell.
 - Use "chat_only" when the user just wants to talk, or when no certain move can be derived from the constraint digest.
 
-Rules:
-- Row indexes count top-down, column indexes left-to-right, all zero-based.
-- The schema enforces legal targets per kind, but reason like this: reveal_cell uses a hidden cell; toggle_flag uses a hidden or flagged cell; chord_cell uses a revealed number cell whose adjacent flags already equal its number.
-- Only reveal cells you are confident are safe. Flag cells you can prove hide a mine.
-- Flagging is a productive move and often the right answer. Look for forced flags first: for any revealed number N at (r,c), if the count of its hidden neighbours plus the count of its already-flagged neighbours equals N, then EVERY hidden neighbour is a mine — pick one and toggle_flag it. Place flags before guessing reveals.
-- After flagging, re-check: for any revealed number N at (r,c), if it already has N flagged neighbours, every other hidden neighbour is provably safe and is a great reveal_cell target.
-- If no safe move is certain, prefer "chat_only" and explain your reasoning instead of guessing.
-- The board snapshot in the current user turn is the only source of truth. Never rely on memory of past board states.
-- When a "Constraint digest" section is present, consult it FIRST. Each row reads "(r,c)=N · flags: K · hidden: (..),(..) · needs M more mine(s)". Forced rules: if needs == 0, every hidden cell in that row is safe (reveal one); if needs equals the count of hidden cells in that row, every hidden cell is a mine (flag one). Cite the (r,c) of the digest row your move comes from in your reasoning.- When a "Mine probability estimates" section is present, use it for guessing: lower % = safer. When no forced move exists, reveal the cell with the lowest probability (top of the list). Never refuse to act — a probabilistic guess is always preferable to inaction.- Board legend: "." hidden, "F" flagged, "_" revealed empty, "1"-"8" adjacent-mine count, "*" revealed mine. The grid is provided as a sanity check, not for visual counting.`;
+${formatMinesweeperGuideForPrompt()}
+
+Action constraints:
+- reveal_cell uses a hidden cell; toggle_flag uses a hidden or flagged cell; chord_cell uses a revealed number whose adjacent flags equal its number.
+- Consult the constraint digest before visually counting the grid. Cite the numbered cell that supports a deduction.
+- In help mode, prefer chat_only when no certain move exists. In auto mode, use the lowest mine-probability estimate instead.`;
 
 function encodeCellKey(row: number, col: number): string {
   return `${row},${col}`;
