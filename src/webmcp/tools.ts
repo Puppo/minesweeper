@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { MinesweeperEngine } from "../game/engine";
+import {
+  analyzeBoard,
+  GAME_RULES,
+  PLAY_STRATEGY,
+} from "../game/guidance";
 
 const StartNewGameInput = z.object({
   difficulty: z
@@ -34,7 +39,7 @@ const RowColInput = z.object({
   col: z.int().min(0),
 });
 
-const EmptyInput = z.object({});
+const EmptyInput = z.object({}).strict();
 
 interface ToolSpec<S extends z.ZodType> {
   name: string;
@@ -64,6 +69,36 @@ function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): ModelContextTool {
  */
 export function minesweeperTools(engine: MinesweeperEngine): ModelContextTool[] {
   return [
+    defineTool({
+      name: "get_game_rules",
+      description:
+        "Learn the complete Minesweeper rules, coordinate system, cell states, actions, difficulty presets, and win/loss conditions before playing.",
+      annotations: { readOnlyHint: true },
+      schema: EmptyInput,
+      execute() {
+        return GAME_RULES;
+      },
+    }),
+    defineTool({
+      name: "get_play_strategy",
+      description:
+        "Learn an ordered Minesweeper strategy for finding forced mines, finding safe cells, chording safely, and minimizing risk when a guess is unavoidable.",
+      annotations: { readOnlyHint: true },
+      schema: EmptyInput,
+      execute() {
+        return PLAY_STRATEGY;
+      },
+    }),
+    defineTool({
+      name: "analyze_board",
+      description:
+        "Analyze the current public board without changing it. Returns one deduction-backed next action when possible, otherwise the lowest-risk probabilistic reveal, using an existing action tool name and input.",
+      annotations: { readOnlyHint: true },
+      schema: EmptyInput,
+      execute() {
+        return analyzeBoard(engine.getPublicView());
+      },
+    }),
     defineTool({
       name: "start_new_game",
       description:
@@ -156,5 +191,3 @@ export function minesweeperTools(engine: MinesweeperEngine): ModelContextTool[] 
     }),
   ];
 }
-
-export const READ_ONLY_TOOL_NAMES = new Set(["get_board_state", "get_game_status"]);

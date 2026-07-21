@@ -49,6 +49,27 @@ The built-in AI chat can:
 
 > **Note:** Requires Chrome with the Prompt API enabled
 
+### 🧰 WebMCP Agent Tools
+
+The page registers nine client-side WebMCP tools for browser agents:
+
+| Tool | Purpose |
+|------|---------|
+| `get_game_rules` | Learn the objective, coordinates, cell states, actions, and win/loss rules |
+| `get_play_strategy` | Learn forced-move deductions, safe chording, and risk-minimizing strategy |
+| `analyze_board` | Get one read-only, deduction-backed move or a clearly labeled lowest-risk guess |
+| `start_new_game` | Start a preset or custom game |
+| `reveal_cell` | Reveal one hidden cell |
+| `toggle_flag` | Add or remove a flag |
+| `chord_cell` | Reveal neighbors around a satisfied numbered cell |
+| `get_board_state` | Read the complete public board |
+| `get_game_status` | Read a compact status summary |
+
+A playing agent can call `get_game_rules` and `get_play_strategy` once, start a
+game, then repeat `analyze_board` → the recommended action tool →
+`get_game_status` until the game is won or lost. `analyze_board` never changes
+the board and never reads hidden mine locations.
+
 ### 🏆 Personal Bests
 
 Best times are saved to local storage for each difficulty level. Can you beat your records?

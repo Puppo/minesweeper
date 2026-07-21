@@ -196,6 +196,7 @@ describe("findBestGuess", () => {
     const view = makeHiddenView(9, 9, 10);
     const move = findBestGuess(view);
     expect(move?.reason).toContain("%");
+    expect(move?.mineProbability).toBeCloseTo(10 / 81);
   });
 });
 
