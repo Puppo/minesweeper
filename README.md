@@ -51,7 +51,12 @@ The built-in AI chat can:
 
 ### 🧰 WebMCP Agent Tools
 
-The page registers nine client-side WebMCP tools for browser agents:
+The page registers nine client-side WebMCP tools for browser agents via
+`document.modelContext`. Browsers without native WebMCP are covered by the
+official W3C polyfill ([`@w3c/webmcp-polyfill`](https://www.npmjs.com/package/@w3c/webmcp-polyfill)),
+so the tools register in any modern browser served over HTTPS or localhost —
+native Chrome support (146+, `chrome://flags/#enable-webmcp-testing`) is used
+when present and never overridden.
 
 | Tool | Purpose |
 |------|---------|
@@ -84,7 +89,7 @@ Every move is logged with source attribution (👤 human or 🤖 agent) so you c
 
 Play it right now: **https://puppo.github.io/minesweeper/**
 
-> Requires **Chrome 146+** with `chrome://flags/#enable-webmcp-testing` enabled for the AI assistant.
+> The AI assistant requires **Chrome** with the Prompt API enabled. The WebMCP agent tools work in any browser (via the bundled W3C polyfill); **Chrome 146+** with `chrome://flags/#enable-webmcp-testing` provides the native implementation.
 
 ---
 

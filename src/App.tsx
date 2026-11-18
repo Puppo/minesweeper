@@ -7,6 +7,7 @@ import { ActionLog } from "./components/ActionLog";
 import { useEngine } from "./hooks/useEngine";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { registerWebMcpTools } from "./webmcp/register";
+import { webMcpNativeAtLoad } from "./webmcp/native";
 import type { Difficulty } from "./game/types";
 
 const BEST_TIMES_KEY = "minesweeper:best-times";
@@ -139,8 +140,12 @@ export default function App() {
         className={`mcp-badge ${mcpAvailable ? "" : "off"}`}
         title={
           mcpAvailable
-            ? `${toolCount} WebMCP tools registered`
-            : "WebMCP not available in this browser (Chrome 146+ with chrome://flags/#enable-webmcp-testing)"
+            ? `${toolCount} WebMCP tools registered (${
+                webMcpNativeAtLoad
+                  ? "native browser support"
+                  : "@w3c/webmcp-polyfill"
+              })`
+            : "WebMCP unavailable — this page must be served from a secure context (HTTPS or localhost)"
         }
       >
         <span className="mcp-dot" />
