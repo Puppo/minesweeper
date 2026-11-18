@@ -15,16 +15,19 @@ export interface ToolCallEvents {
 export interface AdaptToolsOptions {
   events?: ToolCallEvents;
   /** If provided, only tools where filter returns true are exposed. */
-  filter?: (tool: ModelContextTool) => boolean;
+  filter?: (tool: WebMCP.ModelContextTool) => boolean;
   /** Sleep this many ms after a *mutating* tool returns (paces auto-play). */
   paceMs?: number;
   /** Abort cooperative pacing + reject before further calls. */
   signal?: AbortSignal;
 }
 
-const NOOP_CLIENT: ModelContextClient = {
-  requestUserInteraction: (cb) => Promise.resolve(cb()),
-};
+/**
+ * Never-aborted signal for tool `execute` options. Tools in this app ignore
+ * execution options, but the `WebMCP.ToolExecuteCallback` signature requires
+ * the argument.
+ */
+const NEVER_ABORTED = new AbortController().signal;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -53,7 +56,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  *  - optionally paces mutating calls so users can watch the board update.
  */
 export function mcpToolsAsLanguageModelTools(
-  tools: ModelContextTool[],
+  tools: WebMCP.ModelContextTool[],
   opts: AdaptToolsOptions = {},
 ): LanguageModelTool[] {
   const filtered = opts.filter ? tools.filter(opts.filter) : tools;
@@ -69,7 +72,9 @@ export function mcpToolsAsLanguageModelTools(
       }
       opts.events?.onToolStart?.(tool.name, input);
       try {
-        const result = await tool.execute(input, NOOP_CLIENT);
+        const result = await tool.execute(input, {
+          signal: opts.signal ?? NEVER_ABORTED,
+        });
         opts.events?.onToolEnd?.(tool.name, input, result);
 
         if (
