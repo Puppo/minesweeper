@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mcpToolsAsLanguageModelTools } from "./tools-adapter";
 
-function makeTool(name: string, readOnly: boolean): ModelContextTool {
+function makeTool(name: string, readOnly: boolean): WebMCP.ModelContextTool {
   return {
     name,
     description: name,

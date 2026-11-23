@@ -7,17 +7,17 @@ export interface WebMcpHandle {
   toolNames: string[];
 }
 
-// The `modelContext` getter moved from `Navigator` to `Document` per the WebML CG
-// decision (Issue 173 / PR #184). We prefer `document.modelContext` and fall back
-// to `navigator.modelContext` for older Chrome builds during the transition.
-function resolveModelContext(): ModelContext | undefined {
-  if (typeof document !== "undefined" && document.modelContext) {
-    return document.modelContext;
+// `document.modelContext` comes from the browser where WebMCP ships natively,
+// or from `@w3c/webmcp-polyfill` (imported in `main.tsx`) everywhere else. So in
+// any secure context it is always set by the time this runs; the `undefined`
+// path is only hit in non-secure contexts (plain HTTP). The legacy
+// `navigator.modelContext` surface (deprecated since Chrome 150, removed later)
+// needs no fallback: the polyfill installs on `Document` there too.
+function resolveModelContext(): WebMCP.ModelContext | undefined {
+  if (typeof document === "undefined") {
+    return undefined;
   }
-  if (typeof navigator !== "undefined" && navigator.modelContext) {
-    return navigator.modelContext;
-  }
-  return undefined;
+  return document.modelContext;
 }
 
 export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
@@ -28,24 +28,31 @@ export function registerWebMcpTools(engine: MinesweeperEngine): WebMcpHandle {
 
   const controller = new AbortController();
   const tools = minesweeperTools(engine);
+  const toolNames = tools.map((t) => t.name);
 
   for (const tool of tools) {
-    modelContext.registerTool(tool, { signal: controller.signal });
+    // The polyfill's `registerTool` returns a promise (native Chrome's returns
+    // void). Swallow rejections caused by our own abort — React StrictMode's
+    // double-mount aborts the first mount's registrations mid-flight — but
+    // surface genuine registration failures.
+    void Promise.resolve(
+      modelContext.registerTool(tool, { signal: controller.signal }),
+    ).catch((err: unknown) => {
+      if (!controller.signal.aborted) {
+        console.warn(
+          `[minesweeper] failed to register WebMCP tool "${tool.name}"`,
+          err,
+        );
+      }
+    });
   }
-
-  const toolNames = tools.map((t) => t.name);
 
   return {
     available: true,
     toolNames,
     dispose() {
-      for (const name of [...toolNames].reverse()) {
-        try {
-          modelContext.unregisterTool?.(name);
-        } catch {
-          // ignore stale cleanup
-        }
-      }
+      // `unregisterTool` is gone from Chrome 148+ and absent from the polyfill;
+      // the AbortSignal is the only lifecycle mechanism.
       controller.abort();
     },
   };

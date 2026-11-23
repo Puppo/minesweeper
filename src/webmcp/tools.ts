@@ -45,29 +45,26 @@ interface ToolSpec<S extends z.ZodType> {
   name: string;
   description: string;
   schema: S;
-  annotations?: ModelContextToolAnnotations;
-  execute(
-    input: z.infer<S>,
-    client: ModelContextClient,
-  ): Promise<unknown> | unknown;
+  annotations?: WebMCP.ToolAnnotations;
+  execute(input: z.infer<S>): Promise<unknown> | unknown;
 }
 
-function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): ModelContextTool {
+function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): WebMCP.ModelContextTool {
   return {
     name: spec.name,
     description: spec.description,
     annotations: spec.annotations,
     inputSchema: z.toJSONSchema(spec.schema),
-    execute: (input, client) => spec.execute(input as z.infer<S>, client),
+    execute: (input) => spec.execute(input as z.infer<S>),
   };
 }
 
 /**
  * Canonical Minesweeper tool definitions shaped for WebMCP
- * (`navigator.modelContext.registerTool`). The same definitions are bridged
+ * (`document.modelContext.registerTool`). The same definitions are bridged
  * into `LanguageModel.create({ tools })` via `mcpToolsAsLanguageModelTools`.
  */
-export function minesweeperTools(engine: MinesweeperEngine): ModelContextTool[] {
+export function minesweeperTools(engine: MinesweeperEngine): WebMCP.ModelContextTool[] {
   return [
     defineTool({
       name: "get_game_rules",

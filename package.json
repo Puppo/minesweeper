@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@w3c/webmcp-polyfill": "^0.1.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "zod": "^4.4.1"

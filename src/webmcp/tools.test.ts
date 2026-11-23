@@ -3,11 +3,13 @@ import { MinesweeperEngine } from "../game/engine";
 import { GAME_RULES, PLAY_STRATEGY } from "../game/guidance";
 import { minesweeperTools } from "./tools";
 
-const client: ModelContextClient = {
-  requestUserInteraction: (callback) => callback(),
+// `WebMCP.ToolExecuteCallback` requires an options argument; the tools under
+// test ignore it.
+const execOptions: WebMCP.ToolExecuteCallbackOptions = {
+  signal: new AbortController().signal,
 };
 
-function getTool(engine: MinesweeperEngine, name: string): ModelContextTool {
+function getTool(engine: MinesweeperEngine, name: string): WebMCP.ModelContextTool {
   const tool = minesweeperTools(engine).find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool: ${name}`);
   return tool;
@@ -45,11 +47,11 @@ describe("minesweeperTools", () => {
   it("returns the canonical rules and strategy", async () => {
     const engine = new MinesweeperEngine();
     await expect(
-      Promise.resolve(getTool(engine, "get_game_rules").execute({}, client)),
+      Promise.resolve(getTool(engine, "get_game_rules").execute({}, execOptions)),
     ).resolves.toBe(GAME_RULES);
     await expect(
       Promise.resolve(
-        getTool(engine, "get_play_strategy").execute({}, client),
+        getTool(engine, "get_play_strategy").execute({}, execOptions),
       ),
     ).resolves.toBe(PLAY_STRATEGY);
   });
@@ -59,7 +61,7 @@ describe("minesweeperTools", () => {
     const before = structuredClone(engine.getState());
 
     await expect(
-      Promise.resolve(getTool(engine, "analyze_board").execute({}, client)),
+      Promise.resolve(getTool(engine, "analyze_board").execute({}, execOptions)),
     ).resolves.toMatchObject({
       status: "idle",
       recommendation: {
